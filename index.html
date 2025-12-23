@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urdu Roman & English AI</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
+        .container { background: #fff; width: 100%; max-width: 600px; padding: 30px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 25px; color: #1a73e8; }
+        .mic-btn { width: 90px; height: 90px; border-radius: 50%; border: none; background: #1a73e8; color: white; font-size: 35px; cursor: pointer; transition: 0.3s; display: block; margin: 0 auto 10px; position: relative; }
+        .mic-btn.listening { background: #ea4335; animation: pulse 1.5s infinite; }
+        #status { text-align: center; color: #666; font-size: 14px; min-height: 20px; margin-bottom: 20px; font-weight: bold; }
+        .result-card { margin-top: 20px; padding: 15px; border-radius: 12px; background: #f8f9fa; border-left: 6px solid #1a73e8; }
+        .label { font-size: 11px; color: #999; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; }
+        .text-out { font-size: 1.25rem; color: #333; margin-top: 8px; line-height: 1.5; }
+        
+        /* Urdu Script remains RTL */
+        #originalText { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
+        /* Roman and English remain LTR */
+        #casualUrdu, #englishText { direction: ltr; text-align: left; }
+
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0.5); } 70% { box-shadow: 0 0 0 25px rgba(234, 67, 53, 0); } 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0); } }
+        
+        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Urdu AI Talk</h1>
+        <p>Talk naturally. App waits 5s before translating.</p>
+    </div>
+
+    <button id="micBtn" class="mic-btn" onclick="startRecognition()">🎤</button>
+    <div id="status">Click Mic to Start Talking</div>
+
+    <div id="outputArea" style="display:none;">
+        <div class="result-card">
+            <span class="label">Apne Kaha (Original):</span>
+            <div id="originalText" class="text-out">...</div>
+        </div>
+        
+        <hr>
+
+        <div class="result-card" style="border-left-color: #ff9800;">
+            <span class="label">Casual (Roman Urdu):</span>
+            <div id="casualUrdu" class="text-out">...</div>
+        </div>
+
+        <div class="result-card" style="border-left-color: #4caf50;">
+            <span class="label">Natural English:</span>
+            <div id="englishText" class="text-out">...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- CONFIGURATION ---
+const API_KEY = 'AIzaSyDuO1oTo1pBPu_2BQGywoViQRTc-oBwKyA'; 
+const SILENCE_DURATION = 5000; // 5 seconds
+
+// --- DOM ELEMENTS ---
+const micBtn = document.getElementById('micBtn');
+const status = document.getElementById('status');
+const originalDisplay = document.getElementById('originalText');
+const romanDisplay = document.getElementById('casualUrdu');
+const englishDisplay = document.getElementById('englishText');
+const outputArea = document.getElementById('outputArea');
+
+// --- SPEECH ENGINE ---
+let silenceTimer;
+let finalTranscript = "";
+
+const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+recognition.lang = 'ur-PK';
+recognition.continuous = true;
+recognition.interimResults = true;
+
+function startRecognition() {
+    try {
+        finalTranscript = "";
+        originalDisplay.innerText = "Listening...";
+        romanDisplay.innerText = "...";
+        englishDisplay.innerText = "...";
+        outputArea.style.display = 'block';
+        
+        recognition.start();
+        micBtn.classList.add('listening');
+        status.innerText = "Mic is ON. Speak freely...";
+    } catch (e) {
+        console.log("Recognition already started or error: ", e);
+    }
+}
+
+recognition.onresult = (event) => {
+    // Reset the 5-second silence timer
+    clearTimeout(silenceTimer);
+
+    let interimTranscript = "";
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript + " ";
+        } else {
+            interimTranscript += event.results[i][0].transcript;
+        }
+    }
+
+    // Show text live
+    originalDisplay.innerText = finalTranscript + interimTranscript;
+    status.innerText = "I'm listening... (Speak or wait 5s to finish)";
+
+    // Start 5s timer
+    silenceTimer = setTimeout(() => {
+        stopAndProcess();
+    }, SILENCE_DURATION);
+};
+
+function stopAndProcess() {
+    recognition.stop();
+    micBtn.classList.remove('listening');
+    
+    const textToTranslate = originalDisplay.innerText.trim();
+    if (textToTranslate && textToTranslate !== "Listening...") {
+        status.innerText = "5s silence detected. AI Thinking...";
+        translateWithGemini(textToTranslate);
+    } else {
+        status.innerText = "No speech detected.";
+    }
+}
+
+recognition.onend = () => {
+    micBtn.classList.remove('listening');
+};
+
+// --- AI TRANSLATION ---
+async function translateWithGemini(userInput) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+    
+    const bodyData = {
+        contents: [{
+            parts: [{
+                text: `Urdu Text: "${userInput}". 
+                Please provide exactly two lines:
+                Line 1: Casual Roman Urdu (text written in English alphabets like WhatsApp slang).
+                Line 2: Natural conversational English.
+                No Urdu script (Arabic characters) in output.`
+            }]
+        }]
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyData)
+        });
+
+        const data = await response.json();
+
+        if (data.candidates && data.candidates[0].content) {
+            const aiResponse = data.candidates[0].content.parts[0].text.trim();
+            const lines = aiResponse.split('\n').filter(l => l.trim() !== "");
+            
+            // Clean and Display
+            romanDisplay.innerText = lines[0].replace(/Line 1:|Roman Urdu:|Casual:/gi, '').trim();
+            englishDisplay.innerText = lines[1].replace(/Line 2:|English:/gi, '').trim();
+            
+            status.innerText = "Translation Complete!";
+        } else {
+            status.innerText = "AI Error. Check Console.";
+            console.error(data);
+        }
+    } catch (error) {
+        status.innerText = "Network Error.";
+        console.error(error);
+    }
+}
+</script>
+
+</body>
+</html>
